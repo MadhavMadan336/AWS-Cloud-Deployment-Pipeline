@@ -3,6 +3,7 @@ pipeline {
 
     environment {
         IMAGE_NAME = 'devops-aws-app'
+        AWS_REGION = 'ap-south-1'
     }
 
     stages {
@@ -48,6 +49,31 @@ pipeline {
                     [ "$status" = "healthy" ]
                     curl -f http://localhost:5001/health
                 '''
+            }
+        }
+
+        stage('Push to ECR') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'aws-ecr-creds',
+                    usernameVariable: 'AWS_ACCESS_KEY_ID',
+                    passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+                )]) {
+                    sh '''
+                        ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+                        REGISTRY=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+
+                        aws ecr get-login-password --region ${AWS_REGION} | \
+                            docker login --username AWS --password-stdin ${REGISTRY}
+
+                        docker tag ${IMAGE_NAME}:${BUILD_NUMBER} \
+                            ${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}
+
+                        docker push ${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}
+
+                        docker logout ${REGISTRY}
+                    '''
+                }
             }
         }
     }
